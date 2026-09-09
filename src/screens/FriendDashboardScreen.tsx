@@ -13,6 +13,8 @@ import { Ionicons, Feather } from '@expo/vector-icons';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { FriendDashboardItem } from '../types/database';
 import { ProgressBar } from '../components/ProgressBar';
+import { FriendTodoDetailModal } from '../components/FriendTodoDetailModal';
+import { AddFriendModal } from '../components/AddFriendModal';
 
 const DEMO_FRIENDS: FriendDashboardItem[] = [
   {
@@ -53,6 +55,10 @@ export const FriendDashboardScreen: React.FC = () => {
   );
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(isSupabaseConfigured);
+
+  // 모달 상태
+  const [selectedFriend, setSelectedFriend] = useState<FriendDashboardItem | null>(null);
+  const [isAddFriendOpen, setIsAddFriendOpen] = useState<boolean>(false);
 
   // Today's date string: YYYY-MM-DD
   const todayDate = new Date().toISOString().split('T')[0];
@@ -138,7 +144,11 @@ export const FriendDashboardScreen: React.FC = () => {
     const color = getProgressColor(item.progress_percentage);
 
     return (
-      <View style={styles.card}>
+      <TouchableOpacity
+        style={styles.card}
+        onPress={() => setSelectedFriend(item)}
+        activeOpacity={0.88}
+      >
         {/* 상단: 프로필 정보 및 달성률 퍼센트 */}
         <View style={styles.cardHeader}>
           <View style={styles.profileRow}>
@@ -189,7 +199,13 @@ export const FriendDashboardScreen: React.FC = () => {
             )}
           </View>
         </View>
-      </View>
+
+        {/* 클릭 힌트 바 */}
+        <View style={styles.cardClickHint}>
+          <Text style={styles.cardClickHintText}>오늘 할 일 목록 보기</Text>
+          <Ionicons name="chevron-forward" size={14} color="#6366F1" />
+        </View>
+      </TouchableOpacity>
     );
   };
 
@@ -200,9 +216,19 @@ export const FriendDashboardScreen: React.FC = () => {
           <Text style={styles.screenSubtitle}>친구들과 함께 달리는 목표</Text>
           <Text style={styles.screenTitle}>친구 현황판</Text>
         </View>
-        <TouchableOpacity style={styles.syncBtn} onPress={onRefresh}>
-          <Ionicons name="reload" size={18} color="#64748B" />
-        </TouchableOpacity>
+        <View style={styles.headerActionRow}>
+          <TouchableOpacity
+            style={styles.addFriendBtn}
+            onPress={() => setIsAddFriendOpen(true)}
+            activeOpacity={0.8}
+          >
+            <Feather name="user-plus" size={14} color="#FFFFFF" />
+            <Text style={styles.addFriendBtnText}>친구 추가</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.syncBtn} onPress={onRefresh}>
+            <Ionicons name="reload" size={18} color="#64748B" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <FlatList
@@ -219,11 +245,27 @@ export const FriendDashboardScreen: React.FC = () => {
               <Ionicons name="people-outline" size={48} color="#CBD5E1" />
               <Text style={styles.emptyTitle}>아직 등록된 친구가 없습니다.</Text>
               <Text style={styles.emptySubtitle}>
-                친구를 추가하고 서로의 일일 달성률을 응원해보세요!
+                우측 상단 '친구 추가'를 눌러 친구와 함께 목표를 시작해보세요!
               </Text>
             </View>
           ) : null
         }
+      />
+
+      {/* 친구 To-Do 상세 모달 */}
+      <FriendTodoDetailModal
+        visible={!!selectedFriend}
+        friend={selectedFriend}
+        onClose={() => setSelectedFriend(null)}
+      />
+
+      {/* 친구 추가 모달 */}
+      <AddFriendModal
+        visible={isAddFriendOpen}
+        onClose={() => setIsAddFriendOpen(false)}
+        onFriendAdded={(newFriend) => {
+          setFriendsData((prev) => [newFriend, ...prev]);
+        }}
       />
     </SafeAreaView>
   );
@@ -252,12 +294,49 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#0F172A',
   },
+  headerActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  addFriendBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#6366F1',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    shadowColor: '#6366F1',
+    shadowOpacity: 0.25,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  addFriendBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
   syncBtn: {
     padding: 8,
     borderRadius: 8,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: '#E2E8F0',
+  },
+  cardClickHint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 4,
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#F8FAFC',
+  },
+  cardClickHintText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6366F1',
   },
   listContainer: {
     padding: 20,
