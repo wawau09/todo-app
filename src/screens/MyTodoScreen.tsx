@@ -28,13 +28,40 @@ const DAYS_OF_WEEK = [
   { id: 6, label: '토' },
 ];
 
+// 로컬 날짜 계산 헬퍼 (타임존 왜곡 방지)
+const getTodayString = () => {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
+const addDaysToDate = (baseDateStr: string, days: number) => {
+  const parts = baseDateStr.split('-').map(Number);
+  const date = new Date(parts[0], parts[1] - 1, parts[2]);
+  date.setDate(date.getDate() + days);
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
+const formatDateLabel = (dateStr: string) => {
+  try {
+    const parts = dateStr.split('-').map(Number);
+    const date = new Date(parts[0], parts[1] - 1, parts[2]);
+    const dayName = ['일', '월', '화', '수', '목', '금', '토'][date.getDay()];
+    return `${parts[1]}월 ${parts[2]}일 (${dayName})`;
+  } catch {
+    return dateStr;
+  }
+};
+
 export const MyTodoScreen: React.FC = () => {
   // Current user info & selected date
   const [userId, setUserId] = useState<string | null>(isSupabaseConfigured ? null : 'demo-user');
-  const [selectedDate, setSelectedDate] = useState<string>(() => {
-    const today = new Date();
-    return today.toISOString().split('T')[0];
-  });
+  const [selectedDate, setSelectedDate] = useState<string>(getTodayString);
   const currentYearMonth = selectedDate.substring(0, 7); // 'YYYY-MM'
 
   // Progress Hook
@@ -84,7 +111,7 @@ export const MyTodoScreen: React.FC = () => {
             user_id: 'demo-user',
             title: '리액트 네이티브 & Supabase 코드 분석하기',
             is_recurring: false,
-            due_date: new Date().toISOString().split('T')[0],
+            due_date: getTodayString(),
             recurring_days: [],
             is_completed: true,
             created_at: new Date().toISOString(),
@@ -96,7 +123,7 @@ export const MyTodoScreen: React.FC = () => {
             user_id: 'demo-user',
             title: '친구 현황판에서 달성률 확인하고 응원하기',
             is_recurring: false,
-            due_date: new Date().toISOString().split('T')[0],
+            due_date: getTodayString(),
             recurring_days: [],
             is_completed: false,
             created_at: new Date().toISOString(),
@@ -111,6 +138,7 @@ export const MyTodoScreen: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [todoTitle, setTodoTitle] = useState<string>('');
   const [isRecurring, setIsRecurring] = useState<boolean>(false);
+  const [modalDate, setModalDate] = useState<string>(getTodayString);
   const [selectedDays, setSelectedDays] = useState<number[]>([]);
 
   // 1. Auth check
@@ -259,13 +287,15 @@ export const MyTodoScreen: React.FC = () => {
       return;
     }
 
+    const targetDueDate = isRecurring ? null : (modalDate || selectedDate);
+
     if (!isSupabaseConfigured) {
       const newTodo: Todo = {
         id: 'demo-t' + Date.now(),
         user_id: 'demo-user',
         title: todoTitle.trim(),
         is_recurring: isRecurring,
-        due_date: isRecurring ? null : selectedDate,
+        due_date: targetDueDate,
         recurring_days: isRecurring ? selectedDays : [],
         is_completed: false,
         created_at: new Date().toISOString(),
@@ -277,6 +307,9 @@ export const MyTodoScreen: React.FC = () => {
       setIsRecurring(false);
       setSelectedDays([]);
       setIsModalOpen(false);
+      if (!isRecurring && targetDueDate) {
+        setSelectedDate(targetDueDate);
+      }
       return;
     }
 
@@ -285,7 +318,7 @@ export const MyTodoScreen: React.FC = () => {
         user_id: userId,
         title: todoTitle.trim(),
         is_recurring: isRecurring,
-        due_date: isRecurring ? null : selectedDate,
+        due_date: targetDueDate,
         recurring_days: isRecurring ? selectedDays : [],
         is_completed: false,
       };
@@ -298,6 +331,10 @@ export const MyTodoScreen: React.FC = () => {
       setIsRecurring(false);
       setSelectedDays([]);
       setIsModalOpen(false);
+
+      if (!isRecurring && targetDueDate) {
+        setSelectedDate(targetDueDate);
+      }
 
       fetchTodos();
       refetchProgress();
@@ -362,15 +399,45 @@ export const MyTodoScreen: React.FC = () => {
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* 상단 헤더 및 날짜 */}
+        {/* 상단 헤더 및 날짜 네비게이션 */}
         <View style={styles.header}>
-          <View>
+          <View style={styles.headerTitleGroup}>
             <Text style={styles.headerSubtitle}>나의 일일 달성도</Text>
-            <Text style={styles.headerTitle}>{selectedDate}</Text>
+            <View style={styles.dateNavRow}>
+              <TouchableOpacity
+                style={styles.dateNavBtn}
+                onPress={() => setSelectedDate((prev) => addDaysToDate(prev, -1))}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Ionicons name="chevron-back" size={20} color="#0F172A" />
+              </TouchableOpacity>
+              
+              <Text style={styles.headerTitle}>{formatDateLabel(selectedDate)}</Text>
+              
+              <TouchableOpacity
+                style={styles.dateNavBtn}
+                onPress={() => setSelectedDate((prev) => addDaysToDate(prev, 1))}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Ionicons name="chevron-forward" size={20} color="#0F172A" />
+              </TouchableOpacity>
+
+              {selectedDate !== getTodayString() && (
+                <TouchableOpacity
+                  style={styles.todayBadgeBtn}
+                  onPress={() => setSelectedDate(getTodayString())}
+                >
+                  <Text style={styles.todayBadgeText}>오늘</Text>
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
           <TouchableOpacity
             style={styles.addButton}
-            onPress={() => setIsModalOpen(true)}
+            onPress={() => {
+              setModalDate(selectedDate);
+              setIsModalOpen(true);
+            }}
             activeOpacity={0.8}
           >
             <Ionicons name="add" size={24} color="#FFFFFF" />
@@ -418,7 +485,7 @@ export const MyTodoScreen: React.FC = () => {
         {/* 2. 오늘 달성률 (%) 카드 */}
         <View style={styles.progressCard}>
           <View style={styles.progressTextRow}>
-            <Text style={styles.progressTitle}>오늘의 달성률</Text>
+            <Text style={styles.progressTitle}>선택한 날의 달성률</Text>
             <Text style={styles.progressPercent}>{percentage}%</Text>
           </View>
           <ProgressBar percentage={percentage} height={12} color="#6366F1" />
@@ -429,11 +496,11 @@ export const MyTodoScreen: React.FC = () => {
 
         {/* 3. 할 일 목록 리스트 */}
         <View style={styles.listSection}>
-          <Text style={styles.sectionTitle}>오늘의 체크리스트</Text>
+          <Text style={styles.sectionTitle}>체크리스트</Text>
           {todos.length === 0 ? (
             <View style={styles.emptyContainer}>
               <Feather name="check-circle" size={40} color="#CBD5E1" />
-              <Text style={styles.emptyText}>오늘 계획된 할 일이 없습니다.</Text>
+              <Text style={styles.emptyText}>이 날짜에 계획된 할 일이 없습니다.</Text>
             </View>
           ) : (
             todos.map((todo) => (
@@ -525,6 +592,70 @@ export const MyTodoScreen: React.FC = () => {
                 </TouchableOpacity>
               </View>
             </View>
+
+            {/* 특정 날짜 선택 UI (isRecurring = false) */}
+            {!isRecurring && (
+              <View style={styles.dateSelectionSection}>
+                <Text style={styles.label}>수행할 날짜 선택</Text>
+                
+                {/* 빠른 날짜 선택 칩 */}
+                <View style={styles.quickChipsRow}>
+                  <TouchableOpacity
+                    style={[styles.quickChip, modalDate === getTodayString() && styles.quickChipActive]}
+                    onPress={() => setModalDate(getTodayString())}
+                  >
+                    <Text style={[styles.quickChipText, modalDate === getTodayString() && styles.quickChipTextActive]}>
+                      오늘
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.quickChip, modalDate === addDaysToDate(getTodayString(), 1) && styles.quickChipActive]}
+                    onPress={() => setModalDate(addDaysToDate(getTodayString(), 1))}
+                  >
+                    <Text style={[styles.quickChipText, modalDate === addDaysToDate(getTodayString(), 1) && styles.quickChipTextActive]}>
+                      내일
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.quickChip, modalDate === addDaysToDate(getTodayString(), 2) && styles.quickChipActive]}
+                    onPress={() => setModalDate(addDaysToDate(getTodayString(), 2))}
+                  >
+                    <Text style={[styles.quickChipText, modalDate === addDaysToDate(getTodayString(), 2) && styles.quickChipTextActive]}>
+                      모레
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* 날짜 앞뒤 변경 및 직접 입력 바 */}
+                <View style={styles.datePickerInputRow}>
+                  <TouchableOpacity
+                    style={styles.dateStepperBtn}
+                    onPress={() => setModalDate((prev) => addDaysToDate(prev, -1))}
+                  >
+                    <Ionicons name="chevron-back" size={20} color="#475569" />
+                  </TouchableOpacity>
+
+                  <View style={styles.dateInputWrapper}>
+                    <Feather name="calendar" size={16} color="#6366F1" />
+                    <TextInput
+                      style={styles.dateTextInput}
+                      value={modalDate}
+                      onChangeText={setModalDate}
+                      placeholder="YYYY-MM-DD"
+                      placeholderTextColor="#94A3B8"
+                    />
+                    <Text style={styles.dateFormattedHint}>{formatDateLabel(modalDate)}</Text>
+                  </View>
+
+                  <TouchableOpacity
+                    style={styles.dateStepperBtn}
+                    onPress={() => setModalDate((prev) => addDaysToDate(prev, 1))}
+                  >
+                    <Ionicons name="chevron-forward" size={20} color="#475569" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
 
             {/* 요일 선택 버튼 그룹 (반복인 경우에만 노출) */}
             {isRecurring && (
@@ -871,6 +1002,96 @@ const styles = StyleSheet.create({
   },
   dayTextActive: {
     color: '#FFFFFF',
+  },
+  headerTitleGroup: {
+    gap: 4,
+  },
+  dateNavRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 2,
+  },
+  dateNavBtn: {
+    padding: 4,
+    borderRadius: 8,
+    backgroundColor: '#EEF2F6',
+  },
+  todayBadgeBtn: {
+    backgroundColor: '#6366F1',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginLeft: 4,
+  },
+  todayBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  dateSelectionSection: {
+    marginBottom: 18,
+  },
+  quickChipsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 10,
+  },
+  quickChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  quickChipActive: {
+    backgroundColor: '#EEF2FF',
+    borderColor: '#6366F1',
+  },
+  quickChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  quickChipTextActive: {
+    color: '#6366F1',
+  },
+  datePickerInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  dateStepperBtn: {
+    width: 38,
+    height: 44,
+    borderRadius: 10,
+    backgroundColor: '#F1F5F9',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  dateInputWrapper: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    height: 44,
+    backgroundColor: '#FFFFFF',
+    gap: 8,
+  },
+  dateTextInput: {
+    flex: 1,
+    fontSize: 14,
+    color: '#0F172A',
+    fontWeight: '600',
+  },
+  dateFormattedHint: {
+    fontSize: 12,
+    color: '#6366F1',
+    fontWeight: '600',
   },
   submitBtn: {
     backgroundColor: '#6366F1',
