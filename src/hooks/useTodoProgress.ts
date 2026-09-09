@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { TodoProgress } from '../types/database';
 
 interface UseTodoProgressOptions {
@@ -30,6 +30,16 @@ export function useTodoProgress({
   }, [targetDate]);
 
   const fetchProgress = useCallback(async () => {
+    if (!isSupabaseConfigured) {
+      setProgress({
+        totalCount: 3,
+        completedCount: 2,
+        percentage: 66.7,
+        loading: false,
+      });
+      return;
+    }
+
     try {
       // If userId is not provided, use the currently logged-in user
       let targetUserId = userId;
@@ -140,7 +150,7 @@ export function useTodoProgress({
   useEffect(() => {
     fetchProgress();
 
-    if (!enableRealtime) return;
+    if (!enableRealtime || !isSupabaseConfigured) return;
 
     // Realtime 구독: todos 또는 todo_completions에 변경 발생 시 즉각 재산출
     const channel = supabase

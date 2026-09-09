@@ -13,7 +13,7 @@ import {
   Platform,
 } from 'react-native';
 import { Ionicons, Feather } from '@expo/vector-icons';
-import { supabase } from '../lib/supabase';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { useTodoProgress } from '../hooks/useTodoProgress';
 import { ProgressBar } from '../components/ProgressBar';
 import { Todo, MonthlyGoal } from '../types/database';
@@ -30,7 +30,7 @@ const DAYS_OF_WEEK = [
 
 export const MyTodoScreen: React.FC = () => {
   // Current user info & selected date
-  const [userId, setUserId] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(isSupabaseConfigured ? null : 'demo-user');
   const [selectedDate, setSelectedDate] = useState<string>(() => {
     const today = new Date();
     return today.toISOString().split('T')[0];
@@ -44,12 +44,68 @@ export const MyTodoScreen: React.FC = () => {
   });
 
   // State
-  const [monthlyGoal, setMonthlyGoal] = useState<MonthlyGoal | null>(null);
+  const [monthlyGoal, setMonthlyGoal] = useState<MonthlyGoal | null>(
+    isSupabaseConfigured
+      ? null
+      : {
+          id: 'demo-goal',
+          user_id: 'demo-user',
+          year_month: currentYearMonth,
+          title: '매일 목표 달성하고 습관 완성하기 🔥',
+          description: null,
+          is_completed: false,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }
+  );
   const [isEditingGoal, setIsEditingGoal] = useState<boolean>(false);
-  const [goalInput, setGoalInput] = useState<string>('');
+  const [goalInput, setGoalInput] = useState<string>(
+    isSupabaseConfigured ? '' : '매일 목표 달성하고 습관 완성하기 🔥'
+  );
 
-  const [todos, setTodos] = useState<Todo[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [todos, setTodos] = useState<Todo[]>(
+    isSupabaseConfigured
+      ? []
+      : [
+          {
+            id: 'demo-t1',
+            user_id: 'demo-user',
+            title: '아침 스트레칭 및 물 1잔 마시기',
+            is_recurring: true,
+            due_date: null,
+            recurring_days: [1, 2, 3, 4, 5],
+            is_completed: false,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            is_done_today: true,
+          },
+          {
+            id: 'demo-t2',
+            user_id: 'demo-user',
+            title: '리액트 네이티브 & Supabase 코드 분석하기',
+            is_recurring: false,
+            due_date: new Date().toISOString().split('T')[0],
+            recurring_days: [],
+            is_completed: true,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            is_done_today: true,
+          },
+          {
+            id: 'demo-t3',
+            user_id: 'demo-user',
+            title: '친구 현황판에서 달성률 확인하고 응원하기',
+            is_recurring: false,
+            due_date: new Date().toISOString().split('T')[0],
+            recurring_days: [],
+            is_completed: false,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            is_done_today: false,
+          },
+        ]
+  );
+  const [isLoading, setIsLoading] = useState<boolean>(isSupabaseConfigured);
 
   // Modal State for Adding To-Do
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
@@ -59,6 +115,7 @@ export const MyTodoScreen: React.FC = () => {
 
   // 1. Auth check
   useEffect(() => {
+    if (!isSupabaseConfigured) return;
     supabase.auth.getUser().then(({ data }) => {
       if (data.user) {
         setUserId(data.user.id);
@@ -148,6 +205,22 @@ export const MyTodoScreen: React.FC = () => {
   // 이달의 목표 저장 / 수정
   const handleSaveMonthlyGoal = async () => {
     if (!userId || !goalInput.trim()) return;
+
+    if (!isSupabaseConfigured) {
+      setMonthlyGoal({
+        id: 'demo-goal',
+        user_id: 'demo-user',
+        year_month: currentYearMonth,
+        title: goalInput.trim(),
+        description: null,
+        is_completed: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+      setIsEditingGoal(false);
+      return;
+    }
+
     try {
       const { data, error } = await supabase
         .from('monthly_goals')
@@ -183,6 +256,27 @@ export const MyTodoScreen: React.FC = () => {
     }
     if (isRecurring && selectedDays.length === 0) {
       Alert.alert('요일 선택', '반복할 요일을 하나 이상 선택해주세요.');
+      return;
+    }
+
+    if (!isSupabaseConfigured) {
+      const newTodo: Todo = {
+        id: 'demo-t' + Date.now(),
+        user_id: 'demo-user',
+        title: todoTitle.trim(),
+        is_recurring: isRecurring,
+        due_date: isRecurring ? null : selectedDate,
+        recurring_days: isRecurring ? selectedDays : [],
+        is_completed: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        is_done_today: false,
+      };
+      setTodos((prev) => [...prev, newTodo]);
+      setTodoTitle('');
+      setIsRecurring(false);
+      setSelectedDays([]);
+      setIsModalOpen(false);
       return;
     }
 
@@ -222,6 +316,8 @@ export const MyTodoScreen: React.FC = () => {
     setTodos((prev) =>
       prev.map((t) => (t.id === todo.id ? { ...t, is_done_today: willBeDone } : t))
     );
+
+    if (!isSupabaseConfigured) return;
 
     try {
       if (todo.is_recurring) {

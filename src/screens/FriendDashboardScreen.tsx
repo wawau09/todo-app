@@ -10,20 +10,61 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { Ionicons, Feather } from '@expo/vector-icons';
-import { supabase } from '../lib/supabase';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { FriendDashboardItem } from '../types/database';
 import { ProgressBar } from '../components/ProgressBar';
 
+const DEMO_FRIENDS: FriendDashboardItem[] = [
+  {
+    friend_id: 'demo-1',
+    username: 'jiwon_runner',
+    full_name: '이지원',
+    avatar_url: null,
+    monthly_goal_title: '매일 5km 러닝 & 마라톤 완주',
+    total_todos: 5,
+    completed_todos: 4,
+    progress_percentage: 80.0,
+  },
+  {
+    friend_id: 'demo-2',
+    username: 'coder_minsu',
+    full_name: '김민수',
+    avatar_url: null,
+    monthly_goal_title: '알고리즘 100제 & 사이드 프로젝트 런칭',
+    total_todos: 4,
+    completed_todos: 4,
+    progress_percentage: 100.0,
+  },
+  {
+    friend_id: 'demo-3',
+    username: 'study_sujin',
+    full_name: '박수진',
+    avatar_url: null,
+    monthly_goal_title: '토익 900점 달성 및 영단어 암기',
+    total_todos: 6,
+    completed_todos: 2,
+    progress_percentage: 33.3,
+  },
+];
+
 export const FriendDashboardScreen: React.FC = () => {
-  const [friendsData, setFriendsData] = useState<FriendDashboardItem[]>([]);
+  const [friendsData, setFriendsData] = useState<FriendDashboardItem[]>(
+    isSupabaseConfigured ? [] : DEMO_FRIENDS
+  );
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isLoading, setIsLoading] = useState<boolean>(isSupabaseConfigured);
 
   // Today's date string: YYYY-MM-DD
   const todayDate = new Date().toISOString().split('T')[0];
 
   // Fetch Friend Dashboard via RPC
   const fetchDashboard = useCallback(async () => {
+    if (!isSupabaseConfigured) {
+      setIsLoading(false);
+      setIsRefreshing(false);
+      return;
+    }
+
     try {
       const { data, error } = await supabase.rpc('get_friends_dashboard', {
         p_target_date: todayDate,
@@ -47,6 +88,8 @@ export const FriendDashboardScreen: React.FC = () => {
 
   useEffect(() => {
     fetchDashboard();
+
+    if (!isSupabaseConfigured) return;
 
     // 친구들의 To-Do 변경 또는 완료 상태 변경 시 실시간 반영
     const todosChannel = supabase
