@@ -58,9 +58,11 @@ const formatDateLabel = (dateStr: string) => {
   }
 };
 
-export const MyTodoScreen: React.FC = () => {
+export const MyTodoScreen: React.FC<{ userIdProp?: string }> = ({ userIdProp }) => {
   // Current user info & selected date
-  const [userId, setUserId] = useState<string | null>(isSupabaseConfigured ? null : 'demo-user');
+  // Determine initial user ID from prop or demo mode
+  const initialUserId = userIdProp ?? (isSupabaseConfigured ? null : 'demo-user');
+  const [userId, setUserId] = useState<string | null>(initialUserId);
   const [selectedDate, setSelectedDate] = useState<string>(getTodayString);
   const currentYearMonth = selectedDate.substring(0, 7); // 'YYYY-MM'
 
@@ -141,16 +143,27 @@ export const MyTodoScreen: React.FC = () => {
   const [modalDate, setModalDate] = useState<string>(getTodayString);
   const [selectedDays, setSelectedDays] = useState<number[]>([]);
 
-  // 1. Auth check
+  // 1. Sync userId prop changes
   useEffect(() => {
+    const newId = userIdProp ?? (isSupabaseConfigured ? null : 'demo-user');
+    setUserId(newId);
+  }, [userIdProp, isSupabaseConfigured]);
+
+  // 2. Auth check (fallback when prop not used)
+  useEffect(() => {
+    if (userIdProp) return; // prop already provides userId
     if (!isSupabaseConfigured) return;
-    supabase.auth.getUser().then(({ data }) => {
-      if (data.user) {
-        setUserId(data.user.id);
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        setUserId(session.user.id);
+      } else {
+        setUserId(null);
       }
     });
-  }, []);
-
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
+  }, [userIdProp]);
   // 2. Fetch Monthly Goal
   const fetchMonthlyGoal = useCallback(async () => {
     if (!userId) return;
@@ -343,22 +356,35 @@ export const MyTodoScreen: React.FC = () => {
     }
   };
 
-  // 할 일 토글 (체크 / 해제)
+  // 할 일 삭제
+  const handleDeleteTodo = async (todo: Todo) => {
+    if (!userId) return;
+    // Optimistic UI removal
+    setTodos((prev) => prev.filter((t) => t.id !== todo.id));
+    if (!isSupabaseConfigured) return;
+    try {
+      await supabase.from('todos').delete().eq('id', todo.id);
+      // Also delete any completions for recurring todos
+      if (todo.is_recurring) {
+        await supabase.from('todo_completions').delete().eq('todo_id', todo.id);
+      }
+      refetchProgress();
+    } catch (err) {
+      console.error('Delete failed:', err);
+      // Re-fetch to restore state
+      fetchTodos();
+    }
+  };
+
   const handleToggleTodo = async (todo: Todo) => {
     if (!userId) return;
 
     const willBeDone = !todo.is_done_today;
 
-    // 낙관적 UI 업데이트
-    setTodos((prev) =>
-      prev.map((t) => (t.id === todo.id ? { ...t, is_done_today: willBeDone } : t))
-    );
-
-    if (!isSupabaseConfigured) return;
-
-    try {
-      if (todo.is_recurring) {
-        // 반복 할 일: todo_completions 테이블 레코드 생성/삭제
+    if (todo.is_recurring) {
+      // Recurring task: update completions table and refresh list
+      if (!isSupabaseConfigured) return;
+      try {
         if (willBeDone) {
           await supabase.from('todo_completions').insert({
             todo_id: todo.id,
@@ -368,24 +394,37 @@ export const MyTodoScreen: React.FC = () => {
         } else {
           await supabase
             .from('todo_completions')
-            .delete()
-            .eq('todo_id', todo.id)
+            .delete().eq('todo_id', todo.id)
             .eq('completed_date', selectedDate);
         }
-      } else {
-        // 단일 날짜 할 일: todos 테이블의 is_completed 컬럼 업데이트
+        // Success: ensure UI reflects latest data
+        await fetchTodos();
+        refetchProgress();
+      } catch (err: any) {
+        console.error('Toggle failed:', err);
+        // Rollback UI on error
+        await fetchTodos();
+        refetchProgress();
+      }
+    } else {
+      // Non-recurring task: optimistic UI update
+      setTodos((prev) =>
+        prev.map((t) => (t.id === todo.id ? { ...t, is_done_today: willBeDone } : t))
+      );
+      if (!isSupabaseConfigured) return;
+      try {
         await supabase
           .from('todos')
           .update({ is_completed: willBeDone, updated_at: new Date().toISOString() })
           .eq('id', todo.id);
+        await fetchTodos();
+        refetchProgress();
+      } catch (err: any) {
+        console.error('Toggle failed:', err);
+        // Rollback UI on error
+        await fetchTodos();
+        refetchProgress();
       }
-
-      refetchProgress();
-    } catch (err: any) {
-      console.error('Toggle failed:', err);
-      // 롤백
-      fetchTodos();
-      refetchProgress();
     }
   };
 
@@ -515,6 +554,10 @@ export const MyTodoScreen: React.FC = () => {
                   size={24}
                   color={todo.is_done_today ? '#6366F1' : '#94A3B8'}
                 />
+                {/* Delete button */}
+                <TouchableOpacity onPress={() => handleDeleteTodo(todo)} style={{ marginLeft: 12 }}>
+                  <Ionicons name="trash" size={20} color="#EF4444" />
+                </TouchableOpacity>
                 <View style={styles.todoDetails}>
                   <Text
                     style={[

@@ -120,7 +120,7 @@ export default function App() {
 
       {/* Screen Body */}
       <View style={styles.content}>
-        {activeTab === 'my_todos' ? <MyTodoScreen /> : <FriendDashboardScreen />}
+        {activeTab === 'my_todos' ? <MyTodoScreen userIdProp={currentUser?.id} /> : <FriendDashboardScreen />}
       </View>
 
       {/* Bottom Navigation Bar */}
