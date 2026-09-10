@@ -15,29 +15,18 @@ const SUPABASE_ANON_KEY =
 
 export const isSupabaseConfigured = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
 
-// If env vars are missing, warn but still create a client with placeholder values to avoid null reference.
-export const supabase = (() => {
-  if (!isSupabaseConfigured) {
-    console.warn('Supabase environment variables are not set. Using placeholder values.');
-    const placeholderUrl = 'https://example.supabase.co';
-    const placeholderKey = 'public-anon-key';
-    return createClient(placeholderUrl, placeholderKey, {
-      auth: {
-        storage: Platform.OS === 'web' ? undefined : AsyncStorage,
-        autoRefreshToken: true,
-        persistSession: true,
-        detectSessionInUrl: Platform.OS === 'web',
-      },
-      realtime: {},
-    });
-  }
-  return createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    auth: {
-      storage: Platform.OS === 'web' ? undefined : AsyncStorage,
-      autoRefreshToken: true,
-      persistSession: true,
-      detectSessionInUrl: Platform.OS === 'web',
-    },
-    realtime: {},
-  });
-})();
+// Validate Supabase URL and Key
+const isValidUrl = (url: string) => /^https?:\/\/[^\s]+$/.test(url);
+if (!isValidUrl(SUPABASE_URL) || !SUPABASE_ANON_KEY) {
+  throw new Error('Supabase URL 또는 ANON KEY가 누락되었거나 올바르지 않습니다. .env 파일에 EXPO_PUBLIC_SUPABASE_URL 및 EXPO_PUBLIC_SUPABASE_ANON_KEY 를 설정해주세요.');
+}
+
+export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: {
+    storage: Platform.OS === 'web' ? undefined : AsyncStorage,
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: Platform.OS === 'web',
+  },
+  realtime: {},
+});
