@@ -17,7 +17,7 @@ import { supabase, isSupabaseConfigured } from './src/lib/supabase';
 
 interface UserInfo {
   id: string;
-  email: string;
+  email?: string;
   username: string;
 }
 

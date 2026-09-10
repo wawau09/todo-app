@@ -16,41 +16,70 @@ import { supabase, isSupabaseConfigured } from '../lib/supabase';
 interface AuthModalProps {
   visible: boolean;
   onClose: () => void;
-  onAuthSuccess: (user: { id: string; email: string; username: string }) => void;
+  onAuthSuccess: (user: { id: string; email?: string; username: string }) => void;
 }
+
+// 아이디(닉네임)를 Supabase 내부 인증용 이메일로 안전하게 매핑하는 헬퍼 함수
+const usernameToInternalEmail = (input: string): string => {
+  const trimmed = input.trim().toLowerCase();
+  if (trimmed.includes('@')) {
+    return trimmed;
+  }
+  // 영문 소문자, 숫자, 마침표, 밑줄, 하이픈만으로 이루어진 경우 바로 사용
+  if (/^[a-z0-9_.-]+$/.test(trimmed)) {
+    return `${trimmed}@togetherdo.app`;
+  }
+  // 한글 등 유니코드 문자가 포함된 경우 안전한 16진수(hex) 문자열로 변환하여 RFC 호환 이메일 생성
+  let hex = '';
+  for (let i = 0; i < trimmed.length; i++) {
+    hex += trimmed.charCodeAt(i).toString(16).padStart(4, '0');
+  }
+  return `u_${hex}@togetherdo.app`;
+};
 
 export const AuthModal: React.FC<AuthModalProps> = ({ visible, onClose, onAuthSuccess }) => {
   const [isSignUp, setIsSignUp] = useState<boolean>(false);
-  const [email, setEmail] = useState<string>('');
-  const [password, setPassword] = useState<string>('');
   const [username, setUsername] = useState<string>('');
+  const [password, setPassword] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const handleAuth = async () => {
     setErrorMsg(null);
+    const cleanUsername = username.trim();
+    const cleanPassword = password.trim();
 
-    if (!email.trim() || !password.trim()) {
-      setErrorMsg('이메일과 비밀번호를 모두 입력해주세요.');
+    if (!cleanUsername || !cleanPassword) {
+      setErrorMsg('아이디와 비밀번호를 모두 입력해주세요.');
       return;
     }
 
-    if (isSignUp && !username.trim()) {
-      setErrorMsg('친구들이 알아볼 수 있는 닉네임을 입력해주세요.');
+    if (isSignUp && cleanUsername.length < 2) {
+      setErrorMsg('아이디(닉네임)는 2글자 이상 입력해주세요.');
+      return;
+    }
+
+    if (cleanPassword.length < 6) {
+      setErrorMsg('비밀번호는 6자리 이상 입력해주세요.');
       return;
     }
 
     setLoading(true);
 
     try {
+      const internalEmail = usernameToInternalEmail(cleanUsername);
+
       if (!isSupabaseConfigured) {
         // 데모 모드일 경우 가상 로그인 처리
         const demoUser = {
           id: 'demo-user-' + Date.now(),
-          email: email.trim(),
-          username: isSignUp ? username.trim() : email.split('@')[0],
+          email: internalEmail,
+          username: cleanUsername,
         };
-        Alert.alert('로그인 완료 (체험 모드)', `${demoUser.username}님 환영합니다!`);
+        Alert.alert(
+          isSignUp ? '가입 완료 (체험 모드)' : '로그인 완료 (체험 모드)',
+          `${demoUser.username}님 환영합니다!`
+        );
         onAuthSuccess(demoUser);
         onClose();
         return;
@@ -59,12 +88,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({ visible, onClose, onAuthSu
       if (isSignUp) {
         // 1. 회원가입
         const { data, error } = await supabase.auth.signUp({
-          email: email.trim(),
-          password: password.trim(),
+          email: internalEmail,
+          password: cleanPassword,
           options: {
             data: {
-              username: username.trim(),
-              full_name: username.trim(),
+              username: cleanUsername,
+              full_name: cleanUsername,
             },
           },
         });
@@ -72,19 +101,19 @@ export const AuthModal: React.FC<AuthModalProps> = ({ visible, onClose, onAuthSu
         if (error) throw error;
 
         if (data.user) {
-          Alert.alert('회원가입 성공', '회원가입 및 로그인이 완료되었습니다!');
+          Alert.alert('회원가입 성공', `${cleanUsername}님 환영합니다!`);
           onAuthSuccess({
             id: data.user.id,
-            email: data.user.email || email,
-            username: username.trim(),
+            email: data.user.email || internalEmail,
+            username: cleanUsername,
           });
           onClose();
         }
       } else {
         // 2. 로그인
         const { data, error } = await supabase.auth.signInWithPassword({
-          email: email.trim(),
-          password: password.trim(),
+          email: internalEmail,
+          password: cleanPassword,
         });
 
         if (error) throw error;
@@ -97,18 +126,25 @@ export const AuthModal: React.FC<AuthModalProps> = ({ visible, onClose, onAuthSu
             .eq('id', data.user.id)
             .maybeSingle();
 
-          const resolvedUsername = profile?.username || data.user.email?.split('@')[0] || 'user';
+          const resolvedUsername = profile?.username || cleanUsername;
           Alert.alert('로그인 성공', `${resolvedUsername}님 환영합니다!`);
           onAuthSuccess({
             id: data.user.id,
-            email: data.user.email || email,
+            email: data.user.email || internalEmail,
             username: resolvedUsername,
           });
           onClose();
         }
       }
     } catch (err: any) {
-      setErrorMsg(err.message || '인증 처리에 실패했습니다.');
+      const msg = err.message || '';
+      if (msg.includes('already registered') || msg.includes('already exists')) {
+        setErrorMsg('이미 존재하는 아이디입니다. 다른 아이디를 사용해주세요.');
+      } else if (msg.includes('Invalid login credentials')) {
+        setErrorMsg('아이디 또는 비밀번호가 일치하지 않습니다.');
+      } else {
+        setErrorMsg(err.message || '인증 처리에 실패했습니다.');
+      }
     } finally {
       setLoading(false);
     }
@@ -162,32 +198,19 @@ export const AuthModal: React.FC<AuthModalProps> = ({ visible, onClose, onAuthSu
             </TouchableOpacity>
           </View>
 
-          {/* 닉네임 필드 (회원가입 시에만) */}
-          {isSignUp && (
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>닉네임 (친구 추가용 아이디)</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="예: 민수_달리자"
-                placeholderTextColor="#94A3B8"
-                value={username}
-                onChangeText={setUsername}
-                autoCapitalize="none"
-              />
-            </View>
-          )}
-
-          {/* 이메일 필드 */}
+          {/* 아이디 필드 */}
           <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>이메일 주소</Text>
+            <Text style={styles.inputLabel}>
+              {isSignUp ? '아이디 (친구 추가용 닉네임)' : '아이디 (닉네임)'}
+            </Text>
             <TextInput
               style={styles.input}
-              placeholder="name@example.com"
+              placeholder={isSignUp ? '예: minsu 또는 민수' : '아이디 또는 닉네임 입력'}
               placeholderTextColor="#94A3B8"
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
+              value={username}
+              onChangeText={setUsername}
               autoCapitalize="none"
+              autoCorrect={false}
             />
           </View>
 
